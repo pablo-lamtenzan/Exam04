@@ -7,7 +7,13 @@
 
 # include <stdio.h> // debug
 
-// <cmd> ; <cmd> ; -> SEGFAULT (obious, executes an empty av)
+// Passed tests
+
+// <cmd>
+// <cmd> <arg>
+// <cmd> <args ...>
+// <cmd> <args ...> ; <cmd> <args ...>
+// <cmd> <args ...> ; <cmd> <args ...> ; (for this one check the return value)
 
 # define STD_ERR_MSG "error: fatal\n"
 # define TRUE 0
@@ -37,8 +43,8 @@ static size_t ft_strlen(const char* s)
 
 static int err(const char* const msg)
 {
+    printf("[DEBUG] ERR has been called!\n");
     write(STDERR_FILENO, msg, ft_strlen(msg));
-    exit(EXIT_FAILURE);
     return (FALSE);
 }
 
@@ -51,7 +57,11 @@ static bool close_pipes(int fds[2])
 {
     for (int i = 0 ; i < 2 ; i++)
         if (fds[i] != i && close(fds[i]) < 0)
+        {
+            printf("[DEBUG] Close pipes returns false! (closes: %d (i = %d))\n", fds[i], i);
             return (FALSE);
+        }
+    printf("[DEBUG] Close pipes returns true!\n");
     return (TRUE);
 }
 
@@ -77,7 +87,8 @@ static int excute_job(t_data* const d)
     int         ret = FALSE;
     const int   prev_in = d->fds[0];
 
-    if (d->out && !pipe(d->fds))
+    printf("[DEBUG]\nout: %d\nin: %d\n", d->out, d->in);
+    if (d->out && pipe(d->fds) < 0)
         return (FALSE);
 
     int pid = fork();
@@ -87,7 +98,11 @@ static int excute_job(t_data* const d)
     {
         if ((d->in && !dup2_and_close(prev_in, STDIN_FILENO))
         || (d->out && !dup2_and_close(d->fds[1], STDOUT_FILENO)))
+        {
+            printf("[DEBUG] ERROR IN dup2! (in: %d, out: %d)\n", prev_in, d->fds[1]);
+            exit(FALSE);
             return (FALSE);
+        }
         ret = execve(*d->av, (char* const *)d->av, (char* const *)d->env);
         err("error: cannot execute ");
         err(*d->av);
@@ -99,6 +114,7 @@ static int excute_job(t_data* const d)
     while (waitpid(pid, &wstatus, 0) <= 0);
     if (WIFEXITED(wstatus))
         ret = WEXITSTATUS(wstatus);
+    printf("[DEBUG] EXEC FUNCTION EXITS (if close pipe is ok ret is [%d])\n", ret);
     return (close_pipes(d->fds) == FALSE ? FALSE : ret);
 }
 
@@ -134,8 +150,11 @@ static int run_command(t_data* const d)
 
     // Set the fd designed to hold piped stdout to it default value (useful for last pipe)
     d->fds[1] = STDOUT_FILENO;
+
     // Skip av[0] or replaced by 0 pipes/semicolons
     ++d->av;
+
+    printf("[DEBUG] CMD: %s\n", d->av[0]);
 
     // Get next pipe or semicolon and the distance until the found symbol (or 0 if no found)
     const size_t    cmd_lenght = next_symbol(d, &next);
@@ -161,7 +180,7 @@ static int run_command(t_data* const d)
 
 int main(int ac, const char** av, const char** env)
 {
-    if (ac <= 1)
+    if (ac <= 1 || !av[1])
         return (0); // or another value ?
 
     t_data data = (t_data){
