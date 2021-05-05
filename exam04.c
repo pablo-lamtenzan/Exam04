@@ -7,6 +7,8 @@
 
 # include <stdio.h> // debug
 
+// <cmd> ; <cmd> ; -> SEGFAULT (obious, executes an empty av)
+
 # define STD_ERR_MSG "error: fatal\n"
 # define TRUE 0
 # define FALSE 1
@@ -36,6 +38,7 @@ static size_t ft_strlen(const char* s)
 static int err(const char* const msg)
 {
     write(STDERR_FILENO, msg, ft_strlen(msg));
+    exit(EXIT_FAILURE);
     return (FALSE);
 }
 
@@ -94,7 +97,7 @@ static int excute_job(t_data* const d)
     // NOTE: In the true bash pipes aren't waited before the end of the piped command.
     int         wstatus;
     while (waitpid(pid, &wstatus, 0) <= 0);
-    if (WEXITSTATUS(wstatus))
+    if (WIFEXITED(wstatus))
         ret = WEXITSTATUS(wstatus);
     return (close_pipes(d->fds) == FALSE ? FALSE : ret);
 }
@@ -131,6 +134,8 @@ static int run_command(t_data* const d)
 
     // Set the fd designed to hold piped stdout to it default value (useful for last pipe)
     d->fds[1] = STDOUT_FILENO;
+    // Skip av[0] or replaced by 0 pipes/semicolons
+    ++d->av;
 
     // Get next pipe or semicolon and the distance until the found symbol (or 0 if no found)
     const size_t    cmd_lenght = next_symbol(d, &next);
@@ -139,7 +144,7 @@ static int run_command(t_data* const d)
     d->out = next == '|';
 
     // execute using pipes or not-piped commands
-    if ((ret = excute_job(d) == FALSE))
+    if ((ret = excute_job(d)) == FALSE)
         return (err(STD_ERR_MSG));
 
     // No more commands, the end
@@ -149,8 +154,8 @@ static int run_command(t_data* const d)
     // Complete the pipe (for next iteration)
     d->in = d->out;
 
-    // Iterate to next command (reset data if there's a semicolon)
-    d->av = d->av + cmd_lenght + 1UL;
+    // Iterate to next command - 1 (reset data if there's a semicolon)
+    d->av += cmd_lenght;
     return (next != ';' ? run_command(d) : main(d->ac, d->av, d->env));
 }
 
